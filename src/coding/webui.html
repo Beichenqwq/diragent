@@ -1,0 +1,588 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agent · 本地观察面板</title>
+  <style>
+    :root { color-scheme: light; --bg: #f2f5f7; --panel: #fff; --ink: #1c2b3a; --muted: #637487; --line: #dde5ec; --accent: #126e78; --soft: #e8f3f4; --error: #ac3434; }
+    * { box-sizing: border-box; }
+    body { margin: 0; height: 100dvh; display: grid; grid-template-rows: auto minmax(0, 1fr); background: var(--bg); color: var(--ink); font: 14px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+    button, textarea { font: inherit; }
+    button { cursor: pointer; border: 1px solid var(--line); border-radius: 7px; background: #fff; color: var(--ink); padding: 7px 13px; }
+    button:hover:not(:disabled) { background: #f2f7f8; }
+    button:disabled { cursor: default; opacity: .45; }
+    button:focus-visible, textarea:focus-visible, summary:focus-visible { outline: 3px solid #83bfc5; outline-offset: 2px; }
+    .primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .primary:hover:not(:disabled) { background: #0c5962; }
+    header { padding: 8px 24px; background: var(--panel); border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; gap: 16px; align-items: center; }
+    .header-info { display: flex; align-items: center; gap: 16px; min-width: 0; flex: 1; }
+    .header-info h1 { flex-shrink: 0; white-space: nowrap; }
+    #sessions-toggle { flex-shrink: 0; padding: 2px 8px; }
+    h1, h2, h3, p { margin: 0; }
+    h1 { font-size: 18px; letter-spacing: .2px; }
+    h2 { font-size: 15px; }
+    h3 { font-size: 13px; }
+    .subtle { color: var(--muted); font-size: 12px; }
+    .mono, pre, .number { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; }
+    #session-meta { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #status { flex-shrink: 0; display: flex; align-items: center; gap: 7px; white-space: nowrap; font-size: 13px; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: #7d8995; }
+    .dot.busy { background: var(--accent); animation: pulse 1.4s infinite; }
+    @keyframes pulse { 50% { opacity: .35; } }
+    main { position: relative; display: grid; grid-template-columns: 230px minmax(0, 1fr) 350px; grid-template-rows: minmax(0, 1fr); gap: 16px; padding: 16px 24px; min-height: 0; width: 100%; max-width: 1840px; margin: 0 auto; }
+    main.sidebar-closed { grid-template-columns: minmax(0, 1fr) 350px; }
+    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+    .sessions-sidebar { display: flex; flex-direction: column; min-height: 0; }
+    .sessions-sidebar[hidden], .sidebar-backdrop[hidden] { display: none; }
+    .sessions-actions { padding: 10px 12px; border-bottom: 1px solid var(--line); }
+    #new-session-button { width: 100%; }
+    #session-list { flex: 1; min-height: 0; overflow: auto; padding: 8px; scrollbar-width: thin; }
+    #session-list-error { flex-shrink: 0; max-height: 100px; overflow: auto; padding: 8px 12px; color: var(--error); font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; }
+    #session-list-error:empty { display: none; }
+    .session-item { display: block; width: 100%; margin-bottom: 5px; padding: 10px; text-align: left; border-color: transparent; background: transparent; }
+    .session-item.active { border-color: #b3d5d8; background: var(--soft); }
+    .session-title { display: block; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .session-detail { display: block; margin-top: 3px; font-size: 11px; color: var(--muted); }
+    .sidebar-backdrop { display: none; position: absolute; inset: 0; z-index: 2; border: 0; border-radius: 0; background: #1c2b3a20; padding: 0; }
+    .sidebar-backdrop:hover:not(:disabled) { background: #1c2b3a20; }
+    .chat { display: flex; flex-direction: column; min-height: 0; }
+    .panel-heading { flex-shrink: 0; border-bottom: 1px solid var(--line); padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+    #transcript { flex: 1; min-height: 0; overflow: auto; padding: 18px; scroll-behavior: smooth; }
+    .empty { color: var(--muted); text-align: center; margin: 16vh 0 0; }
+    .message { margin-bottom: 20px; padding: 0 0 16px; border-bottom: 1px solid #edf1f5; }
+    .message:last-child { border-bottom: 0; margin-bottom: 0; }
+    .message-heading { font-weight: 600; display: flex; align-items: center; gap: 9px; margin-bottom: 6px; }
+    .message.user { background: #f4f7fa; border-radius: 8px; padding: 12px 14px; border: 0; }
+    .message.user .message-heading { color: #527088; }
+    .message.assistant .message-heading { color: var(--accent); }
+    pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 1.65; }
+    .message-body { font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .badge { border-radius: 5px; padding: 1px 6px; background: #edf2f5; color: var(--muted); font-size: 11px; font-weight: 400; }
+    .usage { display: flex; flex-wrap: wrap; gap: 5px 13px; color: var(--muted); font-size: 11px; margin-top: 10px; }
+    .tool { border: 1px solid var(--line); border-radius: 7px; margin-top: 10px; background: #fbfcfd; }
+    .tool summary { cursor: pointer; padding: 9px 11px; color: #45596c; font-size: 12px; overflow-wrap: anywhere; }
+    .tool-body { padding: 0 11px 11px; }
+    .tool-label { color: var(--muted); font-size: 11px; margin: 7px 0 3px; }
+    .tool pre { font-size: 12px; max-height: 230px; overflow: auto; background: #f1f5f7; padding: 8px; border-radius: 5px; }
+    .failed, .tool summary.failed { color: var(--error); }
+    #errors { padding: 0 16px; max-height: 120px; overflow: auto; }
+    .error { margin: 8px 0; padding: 8px 10px; background: #fff1f0; border-left: 3px solid #cb6868; border-radius: 3px; color: var(--error); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+    .composer { display: flex; align-items: flex-end; gap: 8px; flex-shrink: 0; padding: 13px 16px; border-top: 1px solid var(--line); }
+    textarea { display: block; flex: 1; min-width: 0; resize: none; width: 100%; overflow-y: hidden; line-height: 1.6; border: 1px solid #cad6df; border-radius: 7px; padding: 8px 12px; color: var(--ink); background: #fff; }
+    .buttons { display: flex; flex-shrink: 0; gap: 8px; }
+    .aside { overflow: auto; display: flex; flex-direction: column; gap: 14px; min-height: 0; min-width: 0; }
+    /* 卡片保持完整高度，由侧栏滚动；不能压缩后裁掉内部滚动区域。 */
+    .aside > * { flex: 0 0 auto; }
+    .stats { padding: 15px; max-height: 60dvh; overflow: auto; }
+    .aside, .aside .stats { scrollbar-width: none; }
+    .aside::-webkit-scrollbar, .aside .stats::-webkit-scrollbar { display: none; }
+    .total { padding: 11px 0 8px; }
+    .number { font-size: 34px; letter-spacing: -1.5px; line-height: 1.2; font-weight: 600; }
+    .total small { color: var(--muted); margin-left: 6px; }
+    #usage-source { color: var(--accent); font-size: 12px; padding: 4px 8px; border-radius: 5px; background: var(--soft); display: inline-block; margin-bottom: 10px; }
+    dl { margin: 0; }
+    .stat-row { display: flex; justify-content: space-between; gap: 15px; padding: 5px 0; }
+    dt { color: var(--muted); font-size: 12px; }
+    dd { margin: 0; font-family: ui-monospace, Consolas, monospace; }
+    .divider { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 12px; }
+    .note { color: var(--muted); font-size: 11px; margin-top: 10px; }
+    details.inspect > summary { cursor: pointer; padding: 12px 14px; font-weight: 600; font-size: 13px; }
+    .inspect-body { padding: 0 13px 13px; }
+    #messages-json { max-height: min(380px, 50dvh); overflow: auto; font-size: 11px; scrollbar-gutter: stable; }
+    #raw-events { max-height: min(400px, 50dvh); overflow: auto; scrollbar-gutter: stable; }
+    .raw-entry { border-top: 1px solid var(--line); }
+    .raw-entry summary { cursor: pointer; padding: 6px 0; font: 11px ui-monospace, Consolas, monospace; }
+    .raw-entry pre { font-size: 11px; padding-bottom: 8px; }
+    @media (max-width: 1150px) {
+      main { grid-template-columns: minmax(0, 1fr) 350px; }
+      .sessions-sidebar { position: absolute; top: 16px; bottom: 16px; left: 24px; width: 230px; z-index: 3; box-shadow: 0 8px 28px #1c2b3a30; }
+      .sidebar-backdrop { display: block; }
+    }
+    @media (max-width: 850px) {
+      body { height: auto; min-height: 100dvh; grid-template-rows: auto auto; }
+      header { padding: 8px 15px; gap: 10px; }
+      .header-info { gap: 10px; }
+      main, main.sidebar-closed { grid-template-columns: 1fr; grid-template-rows: auto auto; padding: 12px; }
+      .sessions-sidebar { top: 12px; left: 12px; bottom: auto; width: min(260px, calc(100% - 24px)); height: min(70dvh, 600px); }
+      .chat { height: 70dvh; min-height: 440px; }
+      .aside { overflow: visible; }
+    }
+    @media (min-width: 851px) and (max-height: 500px) {
+      body { height: auto; min-height: 100dvh; }
+      main { min-height: 420px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <button id="sessions-toggle" type="button" aria-controls="sessions-sidebar" aria-expanded="true" title="显示或隐藏会话栏">☰ 会话</button>
+    <div class="header-info">
+      <h1>Agent <span class="subtle">/ 本地观察面板</span></h1>
+      <p id="session-meta" class="subtle mono">正在读取会话…</p>
+    </div>
+    <div id="status" role="status"><span id="status-dot" class="dot"></span><span id="status-text">连接中</span></div>
+  </header>
+  <main>
+    <section id="sessions-sidebar" class="panel sessions-sidebar" aria-label="会话列表">
+      <div class="panel-heading"><h2>会话</h2><button id="sessions-close" type="button">收起</button></div>
+      <div class="sessions-actions"><button id="new-session-button" class="primary" type="button" disabled>＋ 新建会话</button></div>
+      <nav id="session-list" aria-label="历史会话"><p class="subtle">正在读取历史会话…</p></nav>
+      <div id="session-list-error" role="status"></div>
+    </section>
+    <button id="sidebar-backdrop" class="sidebar-backdrop" type="button" aria-label="收起会话栏"></button>
+    <section class="panel chat" aria-label="聊天和工具执行">
+      <div class="panel-heading"><h2>聊天与工具</h2><span id="message-count" class="subtle">0 条消息</span></div>
+      <div id="transcript"></div>
+      <div id="errors" role="alert"></div>
+      <form id="prompt-form" class="composer">
+        <textarea id="prompt-input" rows="1" aria-label="发送给 Agent" placeholder="输入问题，观察模型回复、工具过程与上下文统计…"></textarea>
+        <div class="buttons"><button id="continue-button" type="button" disabled>继续运行</button><button id="send-button" class="primary" type="submit" disabled>发送</button></div>
+      </form>
+    </section>
+    <aside class="aside" aria-label="上下文统计和原始数据">
+      <details class="panel inspect" id="context-inspector" open>
+        <summary>当前上下文预测</summary>
+        <div class="stats">
+          <div class="total"><span id="total-tokens" class="number">—</span><small>tokens</small></div>
+          <div id="usage-source">尚未读取</div>
+          <dl>
+            <div class="stat-row"><dt>采用的 API 用量</dt><dd id="provider-tokens">—</dd></div>
+            <div class="stat-row"><dt>估算部分</dt><dd id="estimated-tokens">—</dd></div>
+            <div class="stat-row"><dt>消息数量</dt><dd id="stats-message-count">—</dd></div>
+          </dl>
+          <div class="divider">
+            <h3>完整上下文的分项粗估</h3>
+            <dl>
+              <div class="stat-row"><dt>System</dt><dd id="system-tokens">—</dd></div>
+              <div class="stat-row"><dt>Messages</dt><dd id="message-tokens">—</dd></div>
+              <div class="stat-row"><dt>Tools</dt><dd id="tool-tokens">—</dd></div>
+            </dl>
+          </div>
+          <p class="note">采用旧 usage 时，分项粗估之和不等于预测总量。输入框文字与临时流式回复尚未计入。</p>
+        </div>
+      </details>
+      <details class="panel inspect" id="messages-inspector"><summary>当前消息 JSON</summary><div class="inspect-body"><pre id="messages-json"></pre></div></details>
+      <details class="panel inspect" id="events-inspector"><summary>原始 AgentEvent <span id="event-count" class="subtle">0</span></summary><div class="inspect-body"><p class="subtle">本页连接后收到的事件，按接收顺序排列。</p><div id="raw-events"></div></div></details>
+      <p class="subtle">运行结束且保存成功后显示“已完成”。刷新页面会恢复消息；后台运行中暂不能发起第二次请求。</p>
+    </aside>
+  </main>
+  <script>
+    "use strict";
+
+    const state = {
+      messages: [], contextUsage: null, sessionInfo: null,
+      draft: null, tools: new Map(), events: [], errors: [],
+      sessions: [], sessionsLoaded: false, sessionListError: "", sidebarOpen: true,
+      running: false, connecting: true, streaming: false, status: "连接中",
+    };
+    const el = id => document.getElementById(id);
+    const formatNumber = value => value === null || value === undefined ? "未返回" : Number(value).toLocaleString("zh-CN");
+    const json = value => JSON.stringify(value, null, 2);
+    let renderQueued = false;
+    let pollTimer = null;
+    let rawRendered = 0;
+    let messagesJson = "";
+    let sessionsRendered = "";
+    let catalogRequest = 0;
+    try { state.sidebarOpen = localStorage.getItem("agent-webui-sidebar") !== "closed"; } catch (_) {}
+
+    function addError(message) {
+      const text = String(message || "发生未知错误");
+      if (state.errors[state.errors.length - 1] !== text) state.errors.push(text);
+    }
+
+    function applySnapshot(snapshot) {
+      if (state.sessionInfo?.session_id !== snapshot.session_info?.session_id) {
+        state.draft = null;
+        state.tools.clear();
+        state.events = [];
+        state.errors = [];
+        rawRendered = 0;
+        messagesJson = "";
+        el("raw-events").replaceChildren();
+        el("transcript").replaceChildren();
+      }
+      state.messages = snapshot.messages || [];
+      state.contextUsage = snapshot.context_usage || null;
+      state.sessionInfo = snapshot.session_info || null;
+      state.running = Boolean(snapshot.running);
+      if (!state.running) state.draft = null;
+      if (snapshot.error) addError(snapshot.error);
+    }
+
+    // 先修改状态；具体的 DOM 更新统一由 render 完成。
+    function applyEvent(current, event) {
+      current.events.push(event);
+      switch (event.type) {
+        case "agent_start": current.running = true; current.status = "运行中"; break;
+        case "turn_start": current.status = `第 ${event.turn} 轮`; break;
+        case "message_start": current.draft = ""; current.status = "模型回复中"; break;
+        case "message_delta": current.draft = (current.draft ?? "") + (event.delta || ""); break;
+        case "message_end":
+          current.draft = null;
+          current.messages.push(event.message);
+          break;
+        case "tool_execution_start":
+          current.tools.set(event.tool_call.id, { call: event.tool_call, status: "执行中", result: null, update: "", error: "" });
+          current.status = `执行工具 ${event.tool_call.name}`;
+          break;
+        case "tool_execution_update": {
+          const activity = current.tools.get(event.tool_call_id);
+          if (activity) activity.update = event.message || "";
+          break;
+        }
+        case "tool_execution_end": {
+          const previous = current.tools.get(event.result.tool_call_id) || {};
+          current.tools.set(event.result.tool_call_id, { ...previous, result: event.result, status: event.result.ok ? "已完成" : "失败" });
+          break;
+        }
+        case "error": {
+          // 当前 loop 串行执行工具，执行期间的可恢复错误归属该调用。
+          const activity = event.recoverable
+            ? [...current.tools.values()].find(tool => tool.status === "执行中")
+            : null;
+          if (activity) activity.error = event.message;
+          else addError(event.message);
+          break;
+        }
+        case "agent_end": current.status = "正在保存会话"; break;
+      }
+    }
+
+    function node(tag, className, text) {
+      const result = document.createElement(tag);
+      if (className) result.className = className;
+      if (text !== undefined) result.textContent = String(text);
+      return result;
+    }
+
+    function setSidebarOpen(open) {
+      state.sidebarOpen = open;
+      try { localStorage.setItem("agent-webui-sidebar", open ? "open" : "closed"); } catch (_) {}
+      scheduleRender();
+      requestAnimationFrame(resizePromptInput);
+    }
+
+    function renderSessions(busy) {
+      document.querySelector("main").classList.toggle("sidebar-closed", !state.sidebarOpen);
+      el("sessions-sidebar").hidden = !state.sidebarOpen;
+      el("sidebar-backdrop").hidden = !state.sidebarOpen;
+      el("sessions-toggle").setAttribute("aria-expanded", String(state.sidebarOpen));
+      el("new-session-button").disabled = busy || !state.sessionsLoaded;
+      el("session-list-error").textContent = state.sessionListError;
+      const currentId = state.sessionInfo?.session_id;
+      const signature = json([state.sessions, currentId, state.messages.length, busy, state.sessionsLoaded]);
+      if (signature === sessionsRendered) return;
+      sessionsRendered = signature;
+      const fragment = document.createDocumentFragment();
+      for (const session of state.sessions) {
+        const active = session.session_id === currentId;
+        const firstInput = active ? state.messages.find(message => message.role === "user")?.content : null;
+        const title = firstInput ? firstInput.split(/\s+/).join(" ").trim().slice(0, 80) : session.title;
+        const item = node("button", `session-item${active ? " active" : ""}`);
+        item.type = "button";
+        item.disabled = busy;
+        item.dataset.sessionId = session.session_id;
+        item.setAttribute("aria-current", String(active));
+        item.title = `${title}\n${session.session_id}`;
+        const date = new Date(session.updated_at * 1000).toLocaleString("zh-CN", {
+          month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
+        });
+        item.append(node("span", "session-title", title),
+                    node("span", "session-detail", `${date} · ${active ? state.messages.length : session.message_count} 条消息`),
+                    node("span", "session-detail mono", session.session_id.slice(0, 8)));
+        item.addEventListener("click", () => changeSession(session.session_id));
+        fragment.append(item);
+      }
+      if (!fragment.childNodes.length) fragment.append(node("p", "subtle", state.sessionsLoaded ? "暂无可读取的历史会话" : "正在读取历史会话…"));
+      el("session-list").replaceChildren(fragment);
+    }
+
+    function resizePromptInput() {
+      const input = el("prompt-input");
+      input.style.height = "auto";
+      const style = getComputedStyle(input);
+      const lineHeight = parseFloat(style.lineHeight);
+      const padding = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+      const border = parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
+      const height = Math.max(input.scrollHeight + border, Math.ceil(lineHeight + padding + border));
+      const maximum = Math.ceil(lineHeight * 3 + padding + border);
+      input.style.height = `${Math.min(height, maximum)}px`;
+      input.style.overflowY = height > maximum ? "auto" : "hidden";
+    }
+
+    function usageNode(usage) {
+      const row = node("div", "usage");
+      if (!usage) {
+        row.append(node("span", "", "API 用量：未返回"));
+        return row;
+      }
+      for (const [label, key] of [["input", "input_tokens"], ["output", "output_tokens"], ["cached input", "cached_input_tokens"], ["total", "total_tokens"]]) {
+        row.append(node("span", "mono", `${label} ${formatNumber(usage[key])}`));
+      }
+      row.title = "单次请求的真实 usage；cached input 是 input 的子集，不重复累加。";
+      return row;
+    }
+
+    function toolNode(call, formalResult, openTools) {
+      const activity = state.tools.get(call.id);
+      const result = activity?.result || formalResult;
+      const error = activity?.error || result?.error;
+      const status = result ? (result.ok ? "已完成" : "失败") : activity?.status || "已请求";
+      const details = node("details", "tool");
+      details.dataset.toolId = call.id;
+      details.open = openTools.has(call.id);
+      details.append(node("summary", result?.ok === false ? "failed" : "", `${call.name} · ${status} · ${call.id}`));
+      const body = node("div", "tool-body");
+      body.append(node("div", "tool-label", "参数"), node("pre", "", json(call.arguments || {})));
+      if (activity?.update) body.append(node("div", "tool-label", "进度"), node("pre", "", activity.update));
+      if (result) {
+        body.append(node("div", "tool-label", "结果"), node("pre", result.ok === false ? "failed" : "", result.content || "（空结果）"));
+        if (result.data !== null && result.data !== undefined) body.append(node("div", "tool-label", "结构化 data"), node("pre", "", json(result.data)));
+      }
+      if (error && !(result?.content || "").includes(error)) body.append(node("div", "error", error));
+      details.append(body);
+      return details;
+    }
+
+    function renderTranscript() {
+      const container = el("transcript");
+      const nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 90;
+      const oldScroll = container.scrollTop;
+      const openTools = new Set([...container.querySelectorAll("details.tool[open]")].map(detail => detail.dataset.toolId));
+      const results = new Map(state.messages.filter(message => message.role === "tool").map(message => [message.tool_call_id, message]));
+      const knownCalls = new Set(state.messages.flatMap(message => (message.tool_calls || []).map(call => call.id)));
+      const fragment = document.createDocumentFragment();
+      for (const message of state.messages) {
+        if (message.role === "tool" && knownCalls.has(message.tool_call_id)) continue;
+        const article = node("article", `message ${message.role}`);
+        article.append(node("div", "message-heading", message.role === "user" ? "你" : message.role === "assistant" ? "Assistant" : `工具 ${message.name}`));
+        if (message.content) article.append(node("div", "message-body", message.content));
+        for (const call of message.tool_calls || []) article.append(toolNode(call, results.get(call.id), openTools));
+        if (message.role === "assistant") article.append(usageNode(message.usage));
+        if (message.role === "tool" && !message.ok) article.classList.add("failed");
+        fragment.append(article);
+      }
+      if (state.draft !== null) {
+        const article = node("article", "message assistant");
+        const heading = node("div", "message-heading", "Assistant");
+        heading.append(node("span", "badge", "流式回复"));
+        article.append(heading, node("div", "message-body", state.draft || "等待内容…"));
+        fragment.append(article);
+      }
+      if (!fragment.childNodes.length) fragment.append(node("p", "empty", "发送一个问题，开始观察 Agent。"));
+      container.replaceChildren(fragment);
+      container.scrollTop = nearBottom ? container.scrollHeight : oldScroll;
+    }
+
+    function render() {
+      renderTranscript();
+      const busy = state.running || state.connecting || state.streaming;
+      renderSessions(busy);
+      el("send-button").disabled = busy || !el("prompt-input").value.trim();
+      el("continue-button").disabled = busy;
+      el("status-text").textContent = state.status;
+      el("status-dot").className = `dot${busy ? " busy" : ""}`;
+      el("message-count").textContent = `${state.messages.length} 条消息`;
+      const info = state.sessionInfo;
+      el("session-meta").textContent = info ? `${info.cwd || ""} · ${info.session_id || "本地会话"}` : "本地单会话 · 消息保存在服务端";
+      const usage = state.contextUsage;
+      for (const [id, field] of [["total-tokens", "total_tokens"], ["provider-tokens", "provider_tokens"], ["estimated-tokens", "estimated_tokens"], ["stats-message-count", "message_count"], ["system-tokens", "system_tokens"], ["message-tokens", "message_tokens"], ["tool-tokens", "tool_tokens"]]) {
+        el(id).textContent = usage ? formatNumber(usage[field]) : "—";
+      }
+      el("usage-source").textContent = !usage ? "尚未读取" : usage.uses_provider_usage ? "旧 API usage + 后续消息估算" : "整体字符估算";
+      el("errors").replaceChildren(...state.errors.map(message => node("div", "error", message)));
+      const currentJson = json(state.messages);
+      if (currentJson !== messagesJson) { el("messages-json").textContent = currentJson; messagesJson = currentJson; }
+      while (rawRendered < state.events.length) {
+        const event = state.events[rawRendered];
+        const details = node("details", "raw-entry");
+        details.append(node("summary", "", `${rawRendered + 1}. ${event.type}`), node("pre", "", json(event)));
+        el("raw-events").append(details);
+        rawRendered += 1;
+      }
+      el("event-count").textContent = String(state.events.length);
+    }
+
+    function scheduleRender() {
+      if (renderQueued) return;
+      renderQueued = true;
+      requestAnimationFrame(() => { renderQueued = false; render(); });
+    }
+
+    // SSE 帧由空行分隔；HTTP 传输块可以停在任意字节、换行或 JSON 中间。
+    async function consumeSse(response, onPacket) {
+      if (!response.body) throw new Error("浏览器未提供响应流。");
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+      let buffer = "";
+      let dataLines = [];
+      function acceptLine(line) {
+        if (!line) {
+          if (dataLines.length) { onPacket(JSON.parse(dataLines.join("\n"))); dataLines = []; }
+        } else if (line.startsWith("data:")) {
+          const value = line.slice(5);
+          dataLines.push(value.startsWith(" ") ? value.slice(1) : value);
+        }
+      }
+      function drain(final) {
+        while (true) {
+          const index = buffer.search(/[\r\n]/);
+          if (index < 0) break;
+          if (!final && buffer[index] === "\r" && index === buffer.length - 1) break;
+          const width = buffer[index] === "\r" && buffer[index + 1] === "\n" ? 2 : 1;
+          acceptLine(buffer.slice(0, index));
+          buffer = buffer.slice(index + width);
+        }
+        if (final && buffer) { acceptLine(buffer); buffer = ""; }
+        if (final) acceptLine("");
+      }
+      try {
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) { buffer += decoder.decode(); drain(true); break; }
+          buffer += decoder.decode(value, { stream: true });
+          drain(false);
+        }
+      } finally { reader.releaseLock(); }
+    }
+
+    async function refreshSession() {
+      const response = await fetch("/api/session", { cache: "no-store" });
+      if (!response.ok) throw new Error(`读取会话失败：HTTP ${response.status}`);
+      applySnapshot(await response.json());
+      state.connecting = false;
+      scheduleRender();
+    }
+
+    async function refreshSessions() {
+      const request = ++catalogRequest;
+      try {
+        const response = await fetch("/api/sessions", { cache: "no-store" });
+        if (!response.ok) throw new Error(`读取历史会话失败：HTTP ${response.status}`);
+        const catalog = await response.json();
+        if (request !== catalogRequest) return;
+        state.sessions = catalog.sessions || [];
+        state.sessionListError = (catalog.errors || []).join("\n");
+      } catch (error) { if (request !== catalogRequest) return; state.sessionListError = error.message; }
+      state.sessionsLoaded = true;
+      scheduleRender();
+    }
+
+    async function changeSession(sessionId = null) {
+      if (state.running || state.connecting || state.streaming) return;
+      if (sessionId && sessionId === state.sessionInfo?.session_id) {
+        if (window.matchMedia("(max-width: 1150px)").matches) setSidebarOpen(false);
+        return;
+      }
+      state.connecting = true;
+      state.status = sessionId ? "正在恢复会话" : "正在创建会话";
+      scheduleRender();
+      try {
+        const url = sessionId ? `/api/sessions/${encodeURIComponent(sessionId)}/select` : "/api/sessions";
+        const response = await fetch(url, { method: "POST" });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(typeof body.detail === "string" ? body.detail : `会话操作失败：HTTP ${response.status}`);
+        applySnapshot(body);
+        el("prompt-input").value = "";
+        resizePromptInput();
+        state.status = sessionId ? "已恢复会话" : "新会话已就绪";
+        await refreshSessions();
+        if (window.matchMedia("(max-width: 1150px)").matches) setSidebarOpen(false);
+      } catch (error) { addError(error.message); state.status = "会话操作失败"; }
+      finally { state.connecting = false; scheduleRender(); }
+    }
+
+    function schedulePoll() {
+      if (pollTimer || state.streaming) return;
+      pollTimer = setTimeout(async () => {
+        pollTimer = null;
+        try {
+          await refreshSession();
+          state.status = state.running ? "后台运行中 · 正在同步" : "已恢复会话";
+          if (state.running) schedulePoll();
+          else await refreshSessions();
+        } catch (error) { addError(error.message); state.status = "连接中断 · 正在重试"; schedulePoll(); }
+        scheduleRender();
+      }, 1000);
+    }
+
+    async function run(mode) {
+      if (state.running || state.connecting || state.streaming) return;
+      const content = el("prompt-input").value;
+      if (mode === "prompt" && !content.trim()) return;
+      state.connecting = true;
+      state.streaming = true;
+      state.status = "正在启动";
+      state.tools.clear();
+      let finished = false;
+      scheduleRender();
+      try {
+        const response = await fetch("/api/run", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: json({ mode, ...(mode === "prompt" ? { content } : {}), session_id: state.sessionInfo?.session_id }),
+        });
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          throw new Error(typeof body.detail === "string" ? body.detail : `运行请求失败：HTTP ${response.status}`);
+        }
+        state.connecting = false;
+        state.running = true;
+        if (mode === "prompt") { el("prompt-input").value = ""; resizePromptInput(); }
+        await consumeSse(response, packet => {
+          if (packet.type === "agent_event") applyEvent(state, packet.event);
+          else if (packet.type === "snapshot") applySnapshot(packet.session);
+          else if (packet.type === "run_finished" || packet.type === "run_error") {
+            if (packet.session) applySnapshot(packet.session);
+            state.running = false;
+            state.draft = null;
+            finished = true;
+            if (packet.type === "run_error") {
+              addError(packet.message);
+              addError("本次运行的保存未确认，当前可能包含未保存的消息。需要从磁盘恢复时，请重启服务。");
+              state.status = "运行失败";
+            }
+            else state.status = "已完成 · 会话已保存";
+          }
+          scheduleRender();
+        });
+        if (!finished) { addError("事件连接已结束，正在检查后台运行状态。"); state.status = "正在同步会话"; }
+      } catch (error) { addError(error.message); state.status = "请求或连接出错"; }
+      finally {
+        state.streaming = false;
+        state.connecting = false;
+        if (!finished) {
+          state.connecting = true;
+          try { await refreshSession(); if (state.running) { state.status = "后台运行中 · 正在同步"; schedulePoll(); } }
+          catch (error) { addError(error.message); state.connecting = true; schedulePoll(); }
+        }
+        await refreshSessions();
+        scheduleRender();
+      }
+    }
+
+    el("prompt-form").addEventListener("submit", event => { event.preventDefault(); run("prompt"); });
+    el("continue-button").addEventListener("click", () => run("continue"));
+    el("sessions-toggle").addEventListener("click", () => setSidebarOpen(!state.sidebarOpen));
+    el("sessions-close").addEventListener("click", () => setSidebarOpen(false));
+    el("sidebar-backdrop").addEventListener("click", () => setSidebarOpen(false));
+    el("new-session-button").addEventListener("click", () => changeSession());
+    el("prompt-input").addEventListener("input", () => { resizePromptInput(); scheduleRender(); });
+    window.addEventListener("resize", resizePromptInput);
+    el("prompt-input").addEventListener("keydown", event => {
+      if (event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); run("prompt"); }
+    });
+    (async () => {
+      try {
+        await Promise.all([refreshSession(), refreshSessions()]);
+        state.status = state.running ? "后台运行中 · 正在同步" : "已就绪";
+        if (state.running) schedulePoll();
+      } catch (error) { addError(error.message); state.status = "无法读取会话 · 正在重试"; schedulePoll(); }
+      scheduleRender();
+    })();
+    resizePromptInput();
+    scheduleRender();
+  </script>
+</body>
+</html>

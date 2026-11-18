@@ -1,0 +1,9 @@
+__pycache__/
+.codex_tmp
+.env
+
+reference/
+interview_prep
+/.venv/
+/.env.*
+/dev-note/
