@@ -6,19 +6,19 @@
 
 ## 安装与运行
 
-需要 Python 3.12+ 和 [uv](https://docs.astral.sh/uv/getting-started/installation/)。在仓库根目录运行 `uv sync --locked` 来安装项目依赖。
+1. 需要 Python 3.12+ 和 [uv](https://docs.astral.sh/uv/getting-started/installation/)。在仓库根目录运行 `uv sync --locked` 来安装项目依赖。
 
-并创建 `.env`，写入以下内容：
+2. 并创建 `.env`，写入以下内容：
 
-```dotenv
-OPENAI_API_KEY=your-api-key
-# OPENAI_BASE_URL=https://api.openai.com/v1
-```
+    ```dotenv
+    OPENAI_API_KEY=your-api-key
+    # OPENAI_BASE_URL=https://api.openai.com/v1
+    ```
 
-将 `YOUR_MODEL` 换成要使用的模型 ID，可任选一个入口运行本项目。
+3. 将 `YOUR_MODEL` 换成要使用的模型 ID，可任选一个入口运行本项目：
 
-- TUI：`uv run python -m coding.tui_app --model YOUR_MODEL`
-- Web：`uv run python -m coding.webui --model YOUR_MODEL`，打开 `http://127.0.0.1:8765`
+   - TUI：`uv run python -m coding.tui_app --model YOUR_MODEL`
+   - Web：`uv run python -m coding.webui --model YOUR_MODEL`，打开 `http://127.0.0.1:8765`
 
 ## 架构图
 
