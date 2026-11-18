@@ -2,7 +2,7 @@
 
 > An agent that lives in your working directory.
 
-一个 Coding Agent。用户通过终端 TUI 或 Web UI 提交任务，Agent 调用模型进行推理，使用本地工具读取、修改文件和执行命令，并保存会话记录。
+一个本地编码智能体。用户通过终端 TUI 或 Web UI 提交任务，Agent 调用模型进行推理，使用本地工具读取、修改文件和执行命令，并保存会话记录。
 
 ## 安装与运行
 
